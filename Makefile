@@ -34,7 +34,79 @@ OBJS = \
 
 OBJS_KCSAN = \
   $K/start.o \
-  $K/console.o feq ($(LAB),net)
+  $K/console.o \
+  $K/printf.o \
+  $K/uart.o \
+  $K/spinlock.o
+
+ifdef KCSAN
+OBJS_KCSAN += \
+	$K/kcsan.o
+endif
+
+ifeq ($(LAB),lock)
+OBJS += \
+	$K/stats.o\
+	$K/sprintf.o
+endif
+
+
+ifeq ($(LAB),net)
+OBJS += \
+	$K/e1000.o \
+	$K/net.o \
+	$K/pci.o
+endif
+
+
+# riscv64-unknown-elf- or riscv64-linux-gnu-
+# perhaps in /opt/riscv/bin
+#TOOLPREFIX = 
+
+# Try to infer the correct TOOLPREFIX if not set
+ifndef TOOLPREFIX
+TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
+	then echo 'riscv64-unknown-elf-'; \
+	elif riscv64-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
+	then echo 'riscv64-linux-gnu-'; \
+	elif riscv64-unknown-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
+	then echo 'riscv64-unknown-linux-gnu-'; \
+	else echo "***" 1>&2; \
+	echo "*** Error: Couldn't find a riscv64 version of GCC/binutils." 1>&2; \
+	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
+	echo "***" 1>&2; exit 1; fi)
+endif
+
+QEMU = qemu-system-riscv64
+
+CC = $(TOOLPREFIX)gcc
+AS = $(TOOLPREFIX)gas
+LD = $(TOOLPREFIX)ld
+OBJCOPY = $(TOOLPREFIX)objcopy
+OBJDUMP = $(TOOLPREFIX)objdump
+
+CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
+
+ifdef LAB
+LABUPPER = $(shell echo $(LAB) | tr a-z A-Z)
+XCFLAGS += -DSOL_$(LABUPPER) -DLAB_$(LABUPPER)
+endif
+
+CFLAGS += $(XCFLAGS)
+CFLAGS += -MD
+CFLAGS += -mcmodel=medany
+# CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
+CFLAGS += -fno-common -nostdlib
+CFLAGS += -fno-builtin-strncpy -fno-builtin-strncmp -fno-builtin-strlen -fno-builtin-memset
+CFLAGS += -fno-builtin-memmove -fno-builtin-memcmp -fno-builtin-log -fno-builtin-bzero
+CFLAGS += -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin-putc
+CFLAGS += -fno-builtin-free
+CFLAGS += -fno-builtin-memcpy -Wno-main
+CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
+CFLAGS += -I.
+CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+
+ifeq ($(LAB),net)
 CFLAGS += -DNET_TESTS_PORT=$(SERVERPORT)
 endif
 
@@ -122,10 +194,10 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
-	$U/_sleep\
-	$U/_primes\
 	$U/_tree\
 	$U/_diff\
+	$U/_sleep\
+	$U/_primes\
 	$U/_pingpong\
 	$U/_cp\
 	$U/_du
